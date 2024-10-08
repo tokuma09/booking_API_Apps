@@ -8,3 +8,10 @@ vercel cliでのリリース
 - vercel login
 - vercel .
 - vercel --prod
+
+
+ローカルでfastapiのAPIサーバーを立ち上げる
+- uvicorn src.main:app --reload
+
+ローカルでフロントを立ち上げる
+- streamlit run src/app.py
