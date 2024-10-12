@@ -1,6 +1,6 @@
 from sqlalchemy.orm import Session
 from . import models, schemas
-
+from fastapi import HTTPException
 # ユーザー一覧取得
 def get_users(db: Session, skip: int = 0, limit: int = 100):
     # skipで最初の何行スキップするかを指定
@@ -36,13 +36,26 @@ def create_room(db: Session, room: schemas.Room):
 
 # 予約登録
 def create_booking(db: Session, booking: schemas.Booking):
-    db_booking = models.Booking(user_id=booking.user_id,
-                                room_id=booking.room_id,
-                                booking_num=booking.booking_num,
-                                start_datetime=booking.start_datetime,
-                                end_datetime=booking.end_datetime)
-    db.add(db_booking)
-    db.commit()
-    db.refresh(db_booking)
+
+    # 飛んできた予約情報と重複している予約情報を取得
+    # 重複しているとは、同じ会議室で同じ時間帯に予約が入っていること
+    # (予約開始時間が既存の予約の終了時間よりも前で、予約終了時間が既存の予約の開始時間よりも後)
+    db_booked = db.query(models.Booking).filter(models.Booking.room_id == booking.room_id).\
+        filter(booking.start_datetime < models.Booking.end_datetime).\
+        filter(models.Booking.start_datetime < booking.end_datetime).all()
+
+    if len(db_booked) ==0:
+        # 重複しないのであれば、登録
+        db_booking = models.Booking(user_id=booking.user_id,
+                                    room_id=booking.room_id,
+                                    booking_num=booking.booking_num,
+                                    start_datetime=booking.start_datetime,
+                                    end_datetime=booking.end_datetime)
+        db.add(db_booking)
+        db.commit()
+        db.refresh(db_booking)
+    else:
+        raise HTTPException(status_code=404, detail="予約が重複しています")
+
     return db_booking
 
