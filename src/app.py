@@ -65,14 +65,14 @@ elif page == "bookings":
     res = requests.get(url_users)
     users = res.json()
     users_dict = {user['user_name']: user['user_id'] for user in users}
-
+    id_to_users_dict = {user['user_id']: user['user_name'] for user in users}
     # 会議室一覧を取得
     url_rooms = "http://127.0.0.1:8000/rooms"
     res = requests.get(url_rooms)
     rooms = res.json()
     rooms_dict = {
         room['room_name']: {"room_id": room['room_id'], "capacity":room['capacity']} for room in rooms}
-
+    id_to_rooms_dict = {room['room_id']: room['room_name'] for room in rooms}
     st.write("### 会議室一覧")
     df_rooms = pd.DataFrame(rooms)
     df_rooms.columns = ['会議室名', '定員', '会議室ID']
@@ -83,6 +83,25 @@ elif page == "bookings":
     res = requests.get(url_bookings)
     bookings = res.json()
     df_bookings = pd.DataFrame(bookings)
+
+    # 列の値をidではなく、名前に変更する
+    df_bookings['user_id'] = df_bookings['user_id'].map(lambda x: id_to_users_dict[x])
+    df_bookings['room_id'] = df_bookings['room_id'].map(lambda x: id_to_rooms_dict[x])
+
+    # 日付を読みやすくする
+    df_bookings['start_datetime'] = df_bookings['start_datetime'].map(lambda x: datetime.datetime.fromisoformat(x).strftime('%Y/%m/%d %H:%M'))
+    df_bookings['end_datetime'] = df_bookings['end_datetime'].map(lambda x: datetime.datetime.fromisoformat(x).strftime('%Y/%m/%d %H:%M'))
+
+    # 中身を適切に変更
+    df_bookings = df_bookings.rename(columns={
+        'user_id': '予約者名',
+        'room_id': '会議室名',
+        'booking_num': '予約人数',
+        'start_datetime': '開始時刻',
+        'end_datetime': '終了時刻',
+        'booking_id': '予約番号'
+    })
+
     st.table(df_bookings)
 
     # フォームに乗せる情報はここ
@@ -123,13 +142,22 @@ elif page == "bookings":
             "start_datetime": start_datetime,
             "end_datetime": end_datetime
         }
-        if booking_num <= capacity:
 
+        # 定員以上の場合は予約できない
+        if booking_num > capacity:
+            st.error('定員オーバーです。')
+            st.write(f"定員: {capacity}人, 予約人数: {booking_num}人 {capacity-booking_num}人オーバーです。")
+        # 開始時刻が終了時刻より後の場合は予約できない
+        elif end_time <= start_time:
+            st.error('開始時刻が終了時刻より後です。')
+            st.write(f"開始時刻: {start_time}, 終了時刻: {end_time} 開始時刻が終了時刻より後です。")
+        elif start_time < datetime.time(9, 0, 0) or datetime.time(20, 0, 0) < end_time:
+            st.error('9時から20時までの間で予約してください。')
+            st.write(f"開始時刻: {start_time}, 終了時刻: {end_time} 9時から18時までの間で予約してください。")
+        else:
             url = 'http://127.0.0.1:8000/bookings'
             res = requests.post(url, json=data)
             if res.status_code == 200:
                 st.success('予約登録完了')
-            st.json(res.json())
-        else:
-            st.error('定員オーバーです。')
-            st.write(f"定員: {capacity}人, 予約人数: {booking_num}人 {capacity-booking_num}人オーバーです。")
+            elif res.status_code == 404 and res.json()['detail'] == '予約が重複しています':
+                st.error('予約が重複しています')
